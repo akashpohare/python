@@ -1,250 +1,41 @@
-Connect to Qlik Sense Engine API using CGT
-
-import websocket
+import asyncio
+import websockets
 import json
 import ssl
 
-# Qlik Sense WebSocket URL (Change based on your environment)
-QLIK_SENSE_DESKTOP_URL = "ws://localhost:4848/app/"
-QLIK_SENSE_SERVER_URL = "wss://your-qlik-server:4747/app/"
+# Qlik Sense Server details
+qlik_sense_server = "wss://your-qlik-sense-server.com/app/<app-id>"
 
-def on_message(ws, message):
-    """Callback function to handle messages received from Qlik Sense Engine."""
-    print("Received message:", message)
+# Path to your client certificate and key files
+cert_file = "path/to/your/client.crt"
+key_file = "path/to/your/client.key"
 
-def on_error(ws, error):
-    """Callback function to handle errors."""
-    print("Error:", error)
+# Create an SSL context with client certificates
+ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+ssl_context.load_cert_chain(certfile=cert_file, keyfile=key_file)
 
-def on_close(ws, close_status_code, close_msg):
-    """Callback function to handle connection closure."""
-    print("### Connection closed ###")
+async def connect_to_qlik_sense():
+    async with websockets.connect(
+        qlik_sense_server,
+        ssl=ssl_context,  # Pass the SSL context with client certificates
+    ) as websocket:
+        print("Connected to Qlik Sense Engine API using client certificates")
 
-def on_open(ws):
-    """Callback function to handle connection open event."""
-    print("### Connection opened ###")
+        # Send a message to the Qlik Sense Engine API
+        message = {
+            "method": "GetDocList",
+            "handle": -1,
+            "params": [],
+            "outKey": -1,
+            "id": 1
+        }
+        await websocket.send(json.dumps(message))
+        print("Sent message to Qlik Sense Engine API")
 
-    # Example: Sending a request to get the Qlik Sense Engine version
-    request = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "GetDocList",
-        "handle": -1,
-        "params": []
-    }
+        # Receive a response from the Qlik Sense Engine API
+        response = await websocket.recv()
+        print("Received response from Qlik Sense Engine API:")
+        print(json.loads(response))
 
-    ws.send(json.dumps(request))
-
-def connect_to_qlik_sense(url, cert=None):
-    """Function to connect to Qlik Sense Engine API."""
-    websocket.enableTrace(True)
-
-    ws = websocket.WebSocketApp(
-        url,
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close
-    )
-    ws.on_open = on_open
-
-    # If connecting to Qlik Sense Enterprise (Secure Connection)
-    if cert:
-        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
-    else:
-        ws.run_forever()
-
-# Connect to Qlik Sense Desktop
-connect_to_qlik_sense(QLIK_SENSE_DESKTOP_URL)
-
-# If connecting to Qlik Sense Enterprise, provide SSL certificate path
-# connect_to_qlik_sense(QLIK_SENSE_SERVER_URL, cert="path/to/certificate.pem")
-
-Updated to include certificates
-
-import websocket
-import json
-import ssl
-
-# Qlik Sense Enterprise WebSocket URL
-QLIK_SENSE_SERVER_URL = "wss://your-qlik-server:4747/app/"
-
-# Paths to Qlik Sense client certificates
-CERTIFICATE_PATH = "path/to/client.pem"
-PRIVATE_KEY_PATH = "path/to/client_key.pem"
-ROOT_CERT_PATH = "path/to/root.pem"
-
-def on_message(ws, message):
-    """Handles messages received from Qlik Sense Engine."""
-    print("Received message:", message)
-
-def on_error(ws, error):
-    """Handles errors in the WebSocket connection."""
-    print("Error:", error)
-
-def on_close(ws, close_status_code, close_msg):
-    """Handles the closing of the WebSocket connection."""
-    print("### Connection closed ###")
-
-def on_open(ws):
-    """Handles the opening of the WebSocket connection."""
-    print("### Connection opened ###")
-
-    # Example request: Get a list of available Qlik Sense apps
-    request = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "GetDocList",
-        "handle": -1,
-        "params": []
-    }
-
-    ws.send(json.dumps(request))
-
-def connect_to_qlik_sense(url, cert_path, key_path, root_cert_path):
-    """Connect to Qlik Sense Engine API using client certificates."""
-    websocket.enableTrace(True)
-
-    ws = websocket.WebSocketApp(
-        url,
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close
-    )
-    ws.on_open = on_open
-
-    # Establish a secure WebSocket connection with certificates
-    ws.run_forever(sslopt={
-        "certfile": cert_path,
-        "keyfile": key_path,
-        "ca_certs": root_cert_path,
-        "cert_reqs": ssl.CERT_REQUIRED  # Validate the server certificate
-    })
-
-# Connect to Qlik Sense Enterprise using client certificates
-connect_to_qlik_sense(QLIK_SENSE_SERVER_URL, CERTIFICATE_PATH, PRIVATE_KEY_PATH, ROOT_CERT_PATH)
-
-
-Updated to Include WS connection closing and opening and extract 
-
-import websocket
-import json
-import ssl
-
-# Qlik Sense Enterprise WebSocket URL
-QLIK_SENSE_SERVER_URL = "wss://your-qlik-server:4747/app/"
-
-# Paths to Qlik Sense client certificates
-CERTIFICATE_PATH = "path/to/client.pem"
-PRIVATE_KEY_PATH = "path/to/client_key.pem"
-ROOT_CERT_PATH = "path/to/root.pem"
-
-def on_message(ws, message):
-    """Handles messages received from Qlik Sense Engine."""
-    response = json.loads(message)
-
-    if "result" in response:
-        if "qDocList" in response["result"]:  # Extract App List
-            app_list = response["result"]["qDocList"]
-            print("\nAvailable Qlik Sense Apps:")
-            for app in app_list:
-                print(f"App ID: {app['qDocId']} | App Name: {app['qTitle']}")
-            
-            # Extract script from each app one by one
-            for app in app_list:
-                extract_script_from_app(app["qDocId"])
-        
-        elif "qScript" in response["result"]:  # Extract Load Script
-            print(f"\nExtracted Script:\n{response['result']['qScript']}\n")
-
-def on_error(ws, error):
-    """Handles errors in the WebSocket connection."""
-    print("Error:", error)
-
-def on_close(ws, close_status_code, close_msg):
-    """Handles WebSocket connection closing."""
-    print("### Connection closed ###")
-
-def on_open_get_apps(ws):
-    """Handles the opening of the WebSocket connection to get the list of apps."""
-    print("### Connection opened to retrieve app list ###")
-
-    # Request the list of available applications
-    request = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "GetDocList",
-        "handle": -1,
-        "params": []
-    }
-
-    ws.send(json.dumps(request))
-
-def on_open_get_script(ws, app_id):
-    """Handles opening a connection for extracting script from a specific app."""
-    print(f"### Connection opened to extract script from App ID: {app_id} ###")
-
-    # Request to open the app
-    request_open_app = {
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "OpenDoc",
-        "handle": -1,
-        "params": [app_id]
-    }
-    
-    ws.send(json.dumps(request_open_app))
-
-    # Request to get the script from the app
-    request_get_script = {
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "GetScript",
-        "handle": 1,
-        "params": []
-    }
-
-    ws.send(json.dumps(request_get_script))
-
-def connect_to_qlik_sense(url, cert_path, key_path, root_cert_path, on_open_callback, app_id=None):
-    """Establishes a secure WebSocket connection with Qlik Sense Engine API."""
-    websocket.enableTrace(False)  # Disable debugging logs
-
-    ws = websocket.WebSocketApp(
-        url,
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close
-    )
-
-    if app_id:
-        ws.on_open = lambda ws: on_open_callback(ws, app_id)
-    else:
-        ws.on_open = on_open_callback
-
-    # Start secure WebSocket connection
-    ws.run_forever(sslopt={
-        "certfile": cert_path,
-        "keyfile": key_path,
-        "ca_certs": root_cert_path,
-        "cert_reqs": ssl.CERT_REQUIRED
-    })
-
-def extract_script_from_app(app_id):
-    """Connects to Qlik Sense and extracts the script from a specific app."""
-    connect_to_qlik_sense(
-        QLIK_SENSE_SERVER_URL,
-        CERTIFICATE_PATH,
-        PRIVATE_KEY_PATH,
-        ROOT_CERT_PATH,
-        on_open_get_script,
-        app_id
-    )
-
-# First, connect to get the list of apps
-connect_to_qlik_sense(
-    QLIK_SENSE_SERVER_URL,
-    CERTIFICATE_PATH,
-    PRIVATE_KEY_PATH,
-    ROOT_CERT_PATH,
-    on_open_get_apps
-)
+# Run the WebSocket connection
+asyncio.get_event_loop().run_until_complete(connect_to_qlik_sense())
