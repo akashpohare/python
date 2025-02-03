@@ -3,39 +3,73 @@ import websockets
 import json
 import ssl
 
-# Qlik Sense Server details
-qlik_sense_server = "wss://your-qlik-sense-server.com/app/<app-id>"
+# Configuration
+ENGINE_URL = "wss://your-qlik-sense-server:4747/app/"  # Use 'wss://' for secure connections
+APP_ID = "your-app-id"  # Replace with your Qlik Sense App ID
 
-# Path to your client certificate and key files
-cert_file = "path/to/your/client.crt"
-key_file = "path/to/your/client.key"
+# Path to Qlik Sense certificates (exported from QMC)
+CERTIFICATE_PATH = "path/to/client.pem"
+KEY_PATH = "path/to/client_key.pem"
+ROOT_CERT_PATH = "path/to/root.pem"
 
-# Create an SSL context with client certificates
-ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-ssl_context.load_cert_chain(certfile=cert_file, keyfile=key_file)
+async def connect_to_qlik():
+    # Create SSL context for authentication
+    ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    ssl_context.load_cert_chain(certfile=CERTIFICATE_PATH, keyfile=KEY_PATH)
+    ssl_context.load_verify_locations(cafile=ROOT_CERT_PATH)
 
-async def connect_to_qlik_sense():
-    async with websockets.connect(
-        qlik_sense_server,
-        ssl=ssl_context,  # Pass the SSL context with client certificates
-    ) as websocket:
-        print("Connected to Qlik Sense Engine API using client certificates")
+    # Establish WebSocket connection
+    async with websockets.connect(ENGINE_URL, ssl=ssl_context) as websocket:
+        print("Connected to Qlik Sense Engine API.")
 
-        # Send a message to the Qlik Sense Engine API
-        message = {
-            "method": "GetDocList",
+        # Open the Qlik Sense app
+        open_app_request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "OpenDoc",
             "handle": -1,
-            "params": [],
-            "outKey": -1,
-            "id": 1
+            "params": [APP_ID]
         }
-        await websocket.send(json.dumps(message))
-        print("Sent message to Qlik Sense Engine API")
+        await websocket.send(json.dumps(open_app_request))
+        response = json.loads(await websocket.recv())
 
-        # Receive a response from the Qlik Sense Engine API
-        response = await websocket.recv()
-        print("Received response from Qlik Sense Engine API:")
-        print(json.loads(response))
+        if "result" not in response:
+            print("Failed to open app:", response)
+            return
 
-# Run the WebSocket connection
-asyncio.get_event_loop().run_until_complete(connect_to_qlik_sense())
+        app_handle = response["result"]["qReturn"]["qHandle"]
+        print(f"App opened. Handle: {app_handle}")
+
+        # Get the script
+        get_script_request = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "GetScript",
+            "handle": app_handle,
+            "params": []
+        }
+        await websocket.send(json.dumps(get_script_request))
+        response = json.loads(await websocket.recv())
+
+        if "result" in response:
+            script = response["result"]["qScript"]
+            print("Qlik Sense Script:")
+            print(script)
+        else:
+            print("Failed to retrieve script:", response)
+
+        # Close the app
+        close_app_request = {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "DoReload",
+            "handle": app_handle,
+            "params": []
+        }
+        await websocket.send(json.dumps(close_app_request))
+        await websocket.recv()
+
+        print("Disconnected from Qlik Sense Engine API.")
+
+# Run the async function
+asyncio.run(connect_to_qlik())
