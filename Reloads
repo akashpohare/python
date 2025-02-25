@@ -1,0 +1,125 @@
+define(["jquery", "qlik", "text!./lib/css/reload_btn.css"], function ($, qlik, cssContent) {
+    $("<style>").html(cssContent).appendTo("head");
+
+    return {
+        paint: function ($element, layout) {
+            var app = qlik.currApp(this);
+            var appId = app.id; // Get the App ID
+
+            // Display Reload Button
+            var html = '<a href="#" id="modal-open" class="btn btn-primary">Reload</a>';
+            $element.html(html);
+
+            $("#modal-open").click(function (event) {
+                event.preventDefault();
+
+                // Prevent duplicate modals
+                if ($("#modal-overlay")[0]) return false;
+
+                $(".qv-panel-sheet").append('<div id="modal-overlay"></div>');
+                $("#modal-overlay").fadeIn("slow");
+
+                $(".qv-panel-sheet").append(
+                    `<div id="modal-content" style="display:none">
+                        <div id="modal-message"><h2>Are you sure you want to reload?</h2></div>
+                        <div id="modal-checkbox">
+                            <input type="checkbox" id="partial" name="partial">
+                            <label for="partial">Partial reload</label>
+                        </div>
+                        <div id="modal-botton">
+                            <a href="#" id="execute-reload" class="btn btn-primary"> OK </a>
+                            <a href="#" id="modal-close" class="btn btn-danger">Cancel</a>
+                        </div>
+                    </div>`
+                );
+                $("#modal-content").fadeIn("slow");
+
+                // Close modal
+                $("#modal-overlay, #modal-close").unbind().click(function (event) {
+                    event.preventDefault();
+                    $("#modal-content,#modal-overlay").fadeOut("slow", function () {
+                        $("#modal-content").remove();
+                        $("#modal-overlay").remove();
+                    });
+                });
+
+                // Execute reload
+                $("#execute-reload").click(function (event) {
+                    event.preventDefault();
+
+                    var xrfKey = "123456789ABCDEF0"; // XRF Key for Qlik Sense API
+                    var qrsUrl = "/qrs/reloadtask/full?xrfkey=" + xrfKey;
+
+                    // Remove modal and show loader
+                    $("#modal-content").remove();
+                    $("#modal-overlay").append('<div id="loader" class="loader">Loading...</div>');
+
+                    // Fetch the reload task associated with the app
+                    $.ajax({
+                        url: qrsUrl,
+                        type: "GET",
+                        headers: {
+                            "X-Qlik-Xrfkey": xrfKey,
+                            "X-Qlik-User": "UserDirectory=Internal;UserId=sa_repository",
+                            "Content-Type": "application/json"
+                        },
+                        success: function (tasks) {
+                            var reloadTask = tasks.find(task => task.app.id === appId);
+                            if (reloadTask) {
+                                triggerReloadTask(reloadTask.id, xrfKey);
+                            } else {
+                                showReloadResult(false);
+                            }
+                        },
+                        error: function () {
+                            showReloadResult(false);
+                        }
+                    });
+                });
+
+                function triggerReloadTask(taskId, xrfKey) {
+                    $.ajax({
+                        url: "/qrs/task/" + taskId + "/start/synchronous?xrfkey=" + xrfKey,
+                        type: "POST",
+                        headers: {
+                            "X-Qlik-Xrfkey": xrfKey,
+                            "X-Qlik-User": "UserDirectory=Internal;UserId=sa_repository",
+                            "Content-Type": "application/json"
+                        },
+                        success: function () {
+                            showReloadResult(true);
+                        },
+                        error: function () {
+                            showReloadResult(false);
+                        }
+                    });
+                }
+
+                function showReloadResult(success) {
+                    $("#loader").remove();
+                    var message = success ? "Reload succeeded!" : "Reload failed!";
+                    var btnClass = success ? "btn-success" : "btn-danger";
+
+                    $("#modal-overlay").append(
+                        `<div id="modal-content" style="display:none">
+                            <div id="modal-message"><h2>${message}</h2></div>
+                            <br>
+                            <div id="modal-checkbox">
+                                <a href="#" id="modal-close" class="btn ${btnClass}">Close</a>
+                            </div>
+                        </div>`
+                    );
+                    $("#modal-content").fadeIn("slow");
+
+                    $("#modal-close").click(function (event) {
+                        event.preventDefault();
+                        $("#modal-content,#modal-overlay").fadeOut("slow", function () {
+                            $("#modal-content").remove();
+                            $("#modal-overlay").remove();
+                        });
+                    });
+                }
+            });
+        }
+    };
+});
